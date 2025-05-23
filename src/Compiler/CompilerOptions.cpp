@@ -14,6 +14,7 @@
 
 #include "llvm/Support/Debug.h"
 #include "llvm/TargetParser/Host.h"
+#include <string>
 
 #include "ExternalUtil.hpp"
 #include "onnx-mlir/Compiler/OMCompilerRuntimeTypes.h"
@@ -1404,10 +1405,11 @@ void initCompilerConfig() {
     addCompilerConfig(CCM_SHARED_LIB_PATH_DEPS, extraLibPaths);
   }
 
-  // Enable aggressive optimization for NNPA with -O3
+  // Enable aggressive optimization for NNPA or NNAY with -O3
   if (OptimizationLevel == OptLevel::O3 &&
-      getTargetAccel().find("NNPA") != std::string::npos) {
-    // Have O3 and NNPA. May enable fast math default in the future.
+      (getTargetAccel().find("NNPA") != std::string::npos ||
+          getTargetAccel().find("NNAY") != std::string::npos)) {
+    // Have O3 and NNPA or NNAY. May enable fast math default in the future.
   }
 
   // Enabling unsafe math.

@@ -1,0 +1,7 @@
+add_onnx_mlir_library(OMONNXToNNAYHL
+  ONNXToNNAYHL.cpp
+
+  LINK_LIBS PUBLIC
+  OMNNAYHLDialect
+  OMONNXOps
+)

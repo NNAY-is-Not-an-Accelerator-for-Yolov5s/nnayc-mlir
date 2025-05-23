@@ -188,3 +188,6 @@ dmypy.json
 .vscode
 .devcontainer
 .vs
+
+*.mlir
+*.tmp
