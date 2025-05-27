@@ -6,6 +6,9 @@
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/TypeSwitch.h"
 
+using namespace mlir;
+using namespace onnx_mlir::nnay::mx;
+
 #define GET_TYPEDEF_CLASSES
 #include "src/Accelerators/NNAY/Dialect/MX/MXTypes.cpp.inc"
 

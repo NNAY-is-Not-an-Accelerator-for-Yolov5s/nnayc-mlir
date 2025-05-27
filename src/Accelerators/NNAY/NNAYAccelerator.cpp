@@ -3,6 +3,7 @@
 #include "Conversion/ONNXToMX/ONNXToMX.hpp"
 #include "Pass/NNAYPasses.hpp"
 #include "mlir/Pass/PassRegistry.h"
+#include "mlir/Transforms/Passes.h"
 #include "onnx-mlir/Compiler/OMCompilerTypes.h"
 #include "src/Compiler/CompilerOptions.hpp"
 #include "src/Compiler/CompilerPasses.hpp"
@@ -59,7 +60,6 @@ void NNAYAccelerator::addPasses(mlir::OwningOpRef<mlir::ModuleOp> &module,
   LLVM_DEBUG(llvm::dbgs() << "Adding passes for NNAY accelerator\n");
   // Here we add NNAY-specific passes
   if (nnayEmissionTarget >= EmitNNAYHLIR) {
-    llvm::outs() << "Adding NNAYHLIR passes\n";
     // pm.addPass(onnx_mlir::nnay::mx::createONNXToMXPass());
     VectorMachineSupport::setGlobalVectorMachineSupport(march, mcpu, "");
     configureConstPropONNXToONNXPass(onnxConstPropRoundFPToInt,
@@ -72,6 +72,9 @@ void NNAYAccelerator::addPasses(mlir::OwningOpRef<mlir::ModuleOp> &module,
         /*donotScrubDisposableElementsAttr*/ true);
     pm.addPass(onnx_mlir::nnay::createONNXToNNAYHLPass());
     pm.addPass(onnx_mlir::nnay::mx::createONNXToMXPass());
+    pm.addPass(createCanonicalizerPass());
+    pm.addPass(onnx_mlir::nnay::createRemoveUnusedConstantPass());
+    pm.addPass(onnx_mlir::nnay::createFoldConvActivationPass());
     emissionTarget = EmitMLIR;
   }
 }
@@ -86,6 +89,12 @@ void NNAYAccelerator::registerPasses(int optLevel) const {
   LLVM_DEBUG(llvm::dbgs() << "Registering passes for NNAY accelerator\n");
   mlir::registerPass([]() -> std::unique_ptr<mlir::Pass> {
     return onnx_mlir::nnay::mx::createONNXToMXPass();
+  });
+  mlir::registerPass([]() -> std::unique_ptr<mlir::Pass> {
+    return onnx_mlir::nnay::createRemoveUnusedConstantPass();
+  });
+  mlir::registerPass([]() -> std::unique_ptr<mlir::Pass> {
+    return onnx_mlir::nnay::createFoldConvActivationPass();
   });
 }
 

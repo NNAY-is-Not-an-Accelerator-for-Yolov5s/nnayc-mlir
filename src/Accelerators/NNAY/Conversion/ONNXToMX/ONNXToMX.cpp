@@ -3,19 +3,16 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassRegistry.h"
-#include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 using namespace mlir;
-using namespace onnx_mlir::nnay::mx;
+using namespace onnx_mlir::nnay;
 
 namespace onnx_mlir {
 namespace nnay {
-namespace mx {
 
-void populatePackConvInputTensorPatterns(RewritePatternSet &patterns);
+void populateConvertONNXTensorToMXPatterns(RewritePatternSet &patterns);
 
-} // namespace mx
 } // namespace nnay
 } // namespace onnx_mlir
 
@@ -29,7 +26,7 @@ struct ONNXToMXPass : public mlir::PassWrapper<ONNXToMXPass,
 
 void ONNXToMXPass::runOnOperation() {
   mlir::RewritePatternSet patterns(&getContext());
-  populatePackConvInputTensorPatterns(patterns);
+  populateConvertONNXTensorToMXPatterns(patterns);
 
   if (mlir::failed(
           mlir::applyPatternsGreedily(getOperation(), std::move(patterns)))) {

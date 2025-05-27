@@ -8,6 +8,9 @@ namespace onnx_mlir {
 namespace nnay {
 
 std::unique_ptr<mlir::Pass> createONNXToNNAYHLPass();
+std::unique_ptr<mlir::Pass> createRemoveUnusedConstantPass();
+std::unique_ptr<mlir::Pass> createFoldConvActivationPass();
+
 } // namespace nnay
 } // namespace onnx_mlir
 

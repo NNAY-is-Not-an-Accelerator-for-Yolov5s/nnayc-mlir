@@ -1,5 +1,6 @@
 #include "ONNXToNNAYHL.hpp"
 
+#include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/PatternMatch.h"
@@ -70,9 +71,10 @@ struct LowerConvOpPattern : public OpRewritePattern<mlir::ONNXConvOp> {
   LogicalResult matchAndRewrite(
       mlir::ONNXConvOp convOp, mlir::PatternRewriter &rewriter) const override {
     auto op =
-        replaceOpWithNewOpAndSetOnnxNodeName<onnx_mlir::nnay::nnayhl::Conv>(
+        replaceOpWithNewOpAndSetOnnxNodeName<onnx_mlir::nnay::nnayhl::ConvAct>(
             rewriter, convOp, convOp.getType(), convOp.getX(), convOp.getW(),
-            convOp.getB(), convOp.getStridesAttr(), convOp.getPadsAttr());
+            convOp.getB(), convOp.getStridesAttr(), convOp.getPadsAttr(),
+            StringAttr::get(rewriter.getContext(), ""));
     op->setAttr("input_layout", rewriter.getStringAttr("NCHW"));
     op->setAttr("weight_layout", rewriter.getStringAttr("OIHW"));
     return success();

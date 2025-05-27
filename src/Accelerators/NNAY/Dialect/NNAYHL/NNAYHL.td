@@ -35,7 +35,7 @@ def SiLU : NNAYHL_Op<"SiLU", [Pure]> {
   let results = (outs AnyType:$output);
 }
 
-def Conv : NNAYHL_Op<"Conv", [Pure]> {
+def ConvAct : NNAYHL_Op<"ConvAct", [Pure]> {
   let summary = "convolution operation";
   let description = "convolution operation";
 
@@ -44,7 +44,8 @@ def Conv : NNAYHL_Op<"Conv", [Pure]> {
     AnyType:$weights,
     AnyType:$bias,
     OptionalAttr<I64ArrayAttr>:$strides,
-    OptionalAttr<I64ArrayAttr>:$pads
+    OptionalAttr<I64ArrayAttr>:$pads,
+    OptionalAttr<Builtin_StringAttr>:$activation
   );
 
   let results = (outs AnyType:$output);
