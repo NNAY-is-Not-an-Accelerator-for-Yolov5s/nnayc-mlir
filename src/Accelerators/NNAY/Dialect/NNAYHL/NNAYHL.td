@@ -40,7 +40,7 @@ def ConvAct : NNAYHL_Op<"ConvAct", [Pure]> {
   let description = "convolution operation";
 
   let arguments = (ins
-    AnyType:$input,
+    Variadic<AnyType>:$inputs,
     AnyType:$weights,
     AnyType:$bias,
     OptionalAttr<I64ArrayAttr>:$strides,
@@ -48,7 +48,8 @@ def ConvAct : NNAYHL_Op<"ConvAct", [Pure]> {
     OptionalAttr<Builtin_StringAttr>:$activation
   );
 
-  let results = (outs AnyType:$output);
+  // let results = (outs AnyType:$output);
+  let results = (outs Variadic<AnyType>:$outputs);
 }
 
 def Concat : NNAYHL_Op<"Concat", [Pure]> {
@@ -74,4 +75,41 @@ def Split : NNAYHL_Op<"Split", [Pure]> {
   );
 
   let results = (outs Variadic<TensorOf<[AnyType]>>:$outputs);
+}
+
+def Pool : NNAYHL_Op<"Pool", [Pure]> {
+  let summary = "pool operation";
+  let description = "pool operation";
+
+  let arguments = (ins
+    AnyType:$input,
+    OptionalAttr<I64ArrayAttr>:$kernel_size,
+    OptionalAttr<I64ArrayAttr>:$stride,
+    OptionalAttr<I64ArrayAttr>:$padding,
+    OptionalAttr<Builtin_StringAttr>:$pooling_type,
+    OptionalAttr<Builtin_StringAttr>:$ceil_mode
+  );
+
+  let results = (outs AnyType:$output);
+}
+
+def Mul : NNAYHL_Op<"Mul", [Pure]> {
+  let summary = "mul operation";
+  let description = "mul operation";
+
+  let arguments = (ins AnyType:$input, AnyType:$other);
+  let results = (outs AnyType:$output);
+}
+
+def Upsample : NNAYHL_Op<"Upsample", [Pure]> {
+  let summary = "upsample operation";
+  let description = "upsample operation";
+
+  let arguments = (ins
+    AnyType:$input,
+    OptionalAttr<I64ArrayAttr>:$scale,
+    OptionalAttr<Builtin_StringAttr>:$mode
+  );
+
+  let results = (outs AnyType:$output);
 }

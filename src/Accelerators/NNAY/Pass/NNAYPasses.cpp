@@ -5,8 +5,6 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "src/Accelerators/NNAY/Conversion/ONNXToNNAYHL/ONNXToNNAYHL.hpp"
 #include "src/Accelerators/NNAY/Dialect/NNAYHL/NNAYHLOps.hpp"
-#include "src/Dialect/ONNX/ONNXOps.hpp"
-#include "llvm/Support/raw_ostream.h"
 
 using namespace mlir;
 using namespace onnx_mlir::nnay;
@@ -28,38 +26,8 @@ struct ONNXToNNAYHLPass : public mlir::PassWrapper<ONNXToNNAYHLPass,
           << "Failed to convert ONNX to NNAYHL";
     }
   }
-};
 
-struct RemoveUnusedMXConstantPattern
-    : public mlir::OpRewritePattern<mlir::ONNXConstantOp> {
-  using mlir::OpRewritePattern<mlir::ONNXConstantOp>::OpRewritePattern;
-  mlir::LogicalResult matchAndRewrite(
-      mlir::ONNXConstantOp op, mlir::PatternRewriter &rewriter) const override {
-    if (op.use_empty()) {
-      llvm::outs() << "Removing unused constant: " << op->getName() << "\n";
-      rewriter.eraseOp(op);
-      return mlir::success();
-    }
-    return mlir::failure();
-  }
-};
-
-struct RemoveUnusedConstantPass
-    : public mlir::PassWrapper<RemoveUnusedConstantPass,
-          mlir::OperationPass<mlir::ModuleOp>> {
-
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(RemoveUnusedConstantPass)
-
-  void runOnOperation() override {
-    mlir::RewritePatternSet patterns(&getContext());
-    patterns.add<RemoveUnusedMXConstantPattern>(patterns.getContext());
-
-    if (mlir::failed(
-            mlir::applyPatternsGreedily(getOperation(), std::move(patterns)))) {
-      mlir::emitError(mlir::UnknownLoc::get(&getContext()))
-          << "Failed to remove unused MX constant";
-    }
-  }
+  mlir::StringRef getArgument() const override { return "onnx-to-nnayhl"; }
 };
 
 struct FoldConvActivationPattern
@@ -72,14 +40,18 @@ struct FoldConvActivationPattern
       return mlir::failure();
     }
 
+    if (op->getResults().size() != 1) {
+      return mlir::failure();
+    }
+
     // Check if Conv has exactly one user
-    if (!op.getResult().hasOneUse())
+    if (!op.getResult(0).hasOneUse())
       return mlir::failure();
 
-    auto user = *op.getResult().getUsers().begin();
+    auto user = *op.getResult(0).getUsers().begin();
     if (auto siluOp = dyn_cast<nnayhl::SiLU>(user)) {
       op.setActivationAttr(StringAttr::get(rewriter.getContext(), "silu"));
-      siluOp.getResult().replaceAllUsesWith(op.getResult());
+      siluOp.getResult().replaceAllUsesWith(op.getResult(0));
       rewriter.eraseOp(siluOp);
       return mlir::success();
     }
@@ -91,11 +63,15 @@ struct FoldConvSplitPattern : public mlir::OpRewritePattern<nnayhl::ConvAct> {
   using mlir::OpRewritePattern<nnayhl::ConvAct>::OpRewritePattern;
   mlir::LogicalResult matchAndRewrite(
       nnayhl::ConvAct op, mlir::PatternRewriter &rewriter) const override {
+    if (op->getResults().size() != 1) {
+      return mlir::failure();
+    }
+
     // Check if Conv has exactly one user and it's a Split
-    if (!op.getResult().hasOneUse())
+    if (!op.getResult(0).hasOneUse())
       return mlir::failure();
 
-    auto splitOp = dyn_cast<nnayhl::Split>(*op.getResult().getUsers().begin());
+    auto splitOp = dyn_cast<nnayhl::Split>(*op.getResult(0).getUsers().begin());
     if (!splitOp)
       return mlir::failure();
 
@@ -150,6 +126,10 @@ struct FoldConvActivationPass : public mlir::PassWrapper<FoldConvActivationPass,
           << "Failed to fold conv activation";
     }
   }
+
+  mlir::StringRef getArgument() const override {
+    return "nnay-fold-conv-activation";
+  }
 };
 
 } // namespace
@@ -159,10 +139,6 @@ namespace nnay {
 
 std::unique_ptr<mlir::Pass> createONNXToNNAYHLPass() {
   return std::make_unique<ONNXToNNAYHLPass>();
-}
-
-std::unique_ptr<mlir::Pass> createRemoveUnusedConstantPass() {
-  return std::make_unique<RemoveUnusedConstantPass>();
 }
 
 std::unique_ptr<mlir::Pass> createFoldConvActivationPass() {

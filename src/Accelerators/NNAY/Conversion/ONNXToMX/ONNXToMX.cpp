@@ -22,6 +22,10 @@ struct ONNXToMXPass : public mlir::PassWrapper<ONNXToMXPass,
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ONNXToMXPass)
 
   void runOnOperation() override;
+
+  mlir::StringRef getArgument() const override {
+    return "onnx-to-mx";
+  }
 };
 
 void ONNXToMXPass::runOnOperation() {

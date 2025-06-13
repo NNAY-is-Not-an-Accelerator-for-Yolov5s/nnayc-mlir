@@ -153,13 +153,66 @@ struct LowerSplitOpPattern : public OpRewritePattern<mlir::ONNXSplitOp> {
   }
 };
 
+struct LowerMulOpPattern : public OpRewritePattern<mlir::ONNXMulOp> {
+  using OpRewritePattern<mlir::ONNXMulOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(
+      mlir::ONNXMulOp mulOp, mlir::PatternRewriter &rewriter) const override {
+    replaceOpWithNewOpAndSetOnnxNodeName<onnx_mlir::nnay::nnayhl::Mul>(
+        rewriter, mulOp, mulOp.getType(), mulOp.getA(), mulOp.getB());
+    return success();
+  }
+};
+
+struct LowerResizeOpPattern : public OpRewritePattern<mlir::ONNXResizeOp> {
+  using OpRewritePattern<mlir::ONNXResizeOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(mlir::ONNXResizeOp resizeOp,
+      mlir::PatternRewriter &rewriter) const override {
+    if (resizeOp->getResults().size() != 1 || resizeOp.getMode() != "nearest" ||
+        resizeOp.getNearestMode() != "floor") {
+      return failure();
+    }
+
+    auto inputShape = cast<RankedTensorType>(resizeOp->getOperand(0).getType());
+    auto resultShape = cast<RankedTensorType>(resizeOp->getResult(0).getType());
+
+    llvm::outs() << "inputShape: " << inputShape << "\n";
+    llvm::outs() << "resultShape: " << resultShape << "\n";
+
+    if (resultShape.getRank() != inputShape.getRank() ||
+        resultShape.getRank() != 4) {
+      return failure();
+    }
+
+    if (resultShape.getDimSize(2) == 2 * inputShape.getDimSize(2) &&
+        resultShape.getDimSize(3) == 2 * inputShape.getDimSize(3)) {
+      SmallVector<NamedAttribute, 2> attrs;
+      attrs.push_back(
+          rewriter.getNamedAttr("mode", resizeOp.getModeAttr()));
+      attrs.push_back(
+          rewriter.getNamedAttr("nearest_mode", resizeOp.getNearestModeAttr()));
+      attrs.push_back(
+          rewriter.getNamedAttr("scale", rewriter.getI64ArrayAttr({2, 2})));
+
+      replaceOpWithNewOpAndSetOnnxNodeName<
+          onnx_mlir::nnay::nnayhl::Upsample>(rewriter, resizeOp,
+          resizeOp.getType(), resizeOp.getOperand(0), attrs);
+      return success();
+    }
+
+    return success();
+  }
+};
+
 } // namespace
 
 namespace onnx_mlir {
 
 void getONNXToNNAYHLPatterns(mlir::RewritePatternSet &patterns) {
   patterns.add<LowerAddOpPattern, LowerSiLUOpPattern, LowerConvOpPattern,
-      LowerConcatOpPattern, LowerSplitOpPattern>(patterns.getContext());
+      LowerConcatOpPattern, LowerSplitOpPattern, LowerMulOpPattern,
+      LowerResizeOpPattern>(patterns.getContext());
 }
 
 void getONNXToNNAYHLDynamicallyLegal(mlir::ConversionTarget *target) {

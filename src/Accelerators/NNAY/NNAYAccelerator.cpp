@@ -22,6 +22,7 @@
 
 #include "src/Accelerators/NNAY/Dialect/MX/MXDialect.hpp"
 #include "src/Accelerators/NNAY/Dialect/NNAYHL/NNAYHLDialect.hpp"
+#include "src/Accelerators/NNAY/Dialect/NNAYLL/NNAYLL.hpp"
 
 #define DEBUG_TYPE "nnay-accelerator"
 
@@ -73,8 +74,9 @@ void NNAYAccelerator::addPasses(mlir::OwningOpRef<mlir::ModuleOp> &module,
     pm.addPass(onnx_mlir::nnay::createONNXToNNAYHLPass());
     pm.addPass(onnx_mlir::nnay::mx::createONNXToMXPass());
     pm.addPass(createCanonicalizerPass());
-    pm.addPass(onnx_mlir::nnay::createRemoveUnusedConstantPass());
     pm.addPass(onnx_mlir::nnay::createFoldConvActivationPass());
+    pm.addPass(onnx_mlir::nnay::createSplitFusePass());
+    pm.addPass(onnx_mlir::nnay::createConcatFusePass());
     emissionTarget = EmitMLIR;
   }
 }
@@ -83,15 +85,13 @@ void NNAYAccelerator::registerDialects(mlir::DialectRegistry &registry) const {
   LLVM_DEBUG(llvm::dbgs() << "Registering dialects for NNAY accelerator\n");
   registry.insert<::onnx_mlir::nnay::mx::MXDialect>();
   registry.insert<::onnx_mlir::nnay::nnayhl::NNAYHLDialect>();
+  registry.insert<::onnx_mlir::nnay::nnayll::NNAYLLDialect>();
 }
 
 void NNAYAccelerator::registerPasses(int optLevel) const {
   LLVM_DEBUG(llvm::dbgs() << "Registering passes for NNAY accelerator\n");
   mlir::registerPass([]() -> std::unique_ptr<mlir::Pass> {
     return onnx_mlir::nnay::mx::createONNXToMXPass();
-  });
-  mlir::registerPass([]() -> std::unique_ptr<mlir::Pass> {
-    return onnx_mlir::nnay::createRemoveUnusedConstantPass();
   });
   mlir::registerPass([]() -> std::unique_ptr<mlir::Pass> {
     return onnx_mlir::nnay::createFoldConvActivationPass();

@@ -12,6 +12,7 @@
 
 #include "mlir/InitAllDialects.h"
 #include "mlir/Target/LLVMIR/Dialect/OpenMP/OpenMPToLLVMIRTranslation.h"
+#include "llvm/Support/raw_ostream.h"
 
 using namespace mlir;
 
@@ -43,8 +44,10 @@ DialectRegistry registerDialects(ArrayRef<accel::Accelerator::Kind> accels) {
   accel::initAccelerators(accels);
 
   // Register dialects for accelerators.
-  for (auto *accel : accel::Accelerator::getAccelerators())
+  for (auto *accel : accel::Accelerator::getAccelerators()) {
+    llvm::outs() << "Registering dialects for " << accel->getName() << "\n";
     accel->registerDialects(registry);
+  }
 
   // Register interface needed by both old and new buffer deallocation pass.
   memref::registerAllocationOpInterfaceExternalModels(registry);

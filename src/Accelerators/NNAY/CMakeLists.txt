@@ -14,6 +14,8 @@ add_subdirectory(Compiler)
 add_subdirectory(Dialect)
 add_subdirectory(Conversion)
 add_subdirectory(Pass)
+add_subdirectory(Simulator)
+add_subdirectory(Transform)
 
 add_onnx_mlir_library(OMNNAYAccel
   NNAYAccelerator.cpp
@@ -33,6 +35,9 @@ add_onnx_mlir_library(OMNNAYAccel
   OMAccelerator
   OMNNAYCompilerUtils
   OMNNAYHLDialect
+  OMNNAYLLDialect
   OMMXDialect
   OMNNAYPasses
+  OMNNAYHLTransform
+  NNAYSimulator
 )
