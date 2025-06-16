@@ -2,12 +2,14 @@
 
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "src/Accelerators/NNAY/Dialect/NNAYHL/NNAYHLOps.hpp"
 #include "src/Dialect/ONNX/ElementsAttr/DisposableElementsAttr.hpp"
 #include "src/Dialect/ONNX/ONNXOps.hpp"
+#include "llvm/Support/LogicalResult.h"
 
 using namespace mlir;
 
@@ -59,8 +61,20 @@ struct LowerSiLUOpPattern : public RewritePattern {
     if (sigmoidOp->getOperand(0) != otherOperand)
       return failure();
 
-    replaceOpWithNewOpAndSetOnnxNodeName<onnx_mlir::nnay::nnayhl::SiLU>(
-        rewriter, mulOp, mulOp.getType(), otherOperand);
+    replaceOpWithNewOpAndSetOnnxNodeName<onnx_mlir::nnay::nnayhl::Act>(rewriter,
+        mulOp, mulOp.getType(), otherOperand, rewriter.getStringAttr("silu"));
+    return success();
+  }
+};
+
+struct LowerReluOpPattern : public OpRewritePattern<mlir::ONNXReluOp> {
+  using OpRewritePattern<mlir::ONNXReluOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(
+      mlir::ONNXReluOp reluOp, mlir::PatternRewriter &rewriter) const override {
+    replaceOpWithNewOpAndSetOnnxNodeName<onnx_mlir::nnay::nnayhl::Act>(rewriter,
+        reluOp, reluOp.getType(), reluOp->getOperand(0),
+        rewriter.getStringAttr("relu"));
     return success();
   }
 };
@@ -177,9 +191,6 @@ struct LowerResizeOpPattern : public OpRewritePattern<mlir::ONNXResizeOp> {
     auto inputShape = cast<RankedTensorType>(resizeOp->getOperand(0).getType());
     auto resultShape = cast<RankedTensorType>(resizeOp->getResult(0).getType());
 
-    llvm::outs() << "inputShape: " << inputShape << "\n";
-    llvm::outs() << "resultShape: " << resultShape << "\n";
-
     if (resultShape.getRank() != inputShape.getRank() ||
         resultShape.getRank() != 4) {
       return failure();
@@ -188,19 +199,43 @@ struct LowerResizeOpPattern : public OpRewritePattern<mlir::ONNXResizeOp> {
     if (resultShape.getDimSize(2) == 2 * inputShape.getDimSize(2) &&
         resultShape.getDimSize(3) == 2 * inputShape.getDimSize(3)) {
       SmallVector<NamedAttribute, 2> attrs;
-      attrs.push_back(
-          rewriter.getNamedAttr("mode", resizeOp.getModeAttr()));
+      attrs.push_back(rewriter.getNamedAttr("mode", resizeOp.getModeAttr()));
       attrs.push_back(
           rewriter.getNamedAttr("nearest_mode", resizeOp.getNearestModeAttr()));
       attrs.push_back(
           rewriter.getNamedAttr("scale", rewriter.getI64ArrayAttr({2, 2})));
 
-      replaceOpWithNewOpAndSetOnnxNodeName<
-          onnx_mlir::nnay::nnayhl::Upsample>(rewriter, resizeOp,
-          resizeOp.getType(), resizeOp.getOperand(0), attrs);
+      replaceOpWithNewOpAndSetOnnxNodeName<onnx_mlir::nnay::nnayhl::Upsample>(
+          rewriter, resizeOp, resizeOp.getType(), resizeOp.getOperand(0),
+          attrs);
       return success();
     }
 
+    return success();
+  }
+};
+
+struct SquareOpPattern : public OpRewritePattern<onnx_mlir::nnay::nnayhl::Mul> {
+  using OpRewritePattern<onnx_mlir::nnay::nnayhl::Mul>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(onnx_mlir::nnay::nnayhl::Mul mulOp,
+      mlir::PatternRewriter &rewriter) const override {
+    if (mulOp.getInput() == mulOp.getOther()) {
+      replaceOpWithNewOpAndSetOnnxNodeName<onnx_mlir::nnay::nnayhl::Square>(
+          rewriter, mulOp, mulOp.getType(), mulOp.getInput());
+      return success();
+    }
+    return failure();
+  }
+};
+
+struct LowerSigmoidOpPattern : public OpRewritePattern<mlir::ONNXSigmoidOp> {
+  using OpRewritePattern<mlir::ONNXSigmoidOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(mlir::ONNXSigmoidOp sigmoidOp,
+      mlir::PatternRewriter &rewriter) const override {
+    replaceOpWithNewOpAndSetOnnxNodeName<onnx_mlir::nnay::nnayhl::Sigmoid>(
+        rewriter, sigmoidOp, sigmoidOp.getType(), sigmoidOp.getX());
     return success();
   }
 };
@@ -212,7 +247,8 @@ namespace onnx_mlir {
 void getONNXToNNAYHLPatterns(mlir::RewritePatternSet &patterns) {
   patterns.add<LowerAddOpPattern, LowerSiLUOpPattern, LowerConvOpPattern,
       LowerConcatOpPattern, LowerSplitOpPattern, LowerMulOpPattern,
-      LowerResizeOpPattern>(patterns.getContext());
+      LowerResizeOpPattern, LowerReluOpPattern, LowerSigmoidOpPattern,
+      SquareOpPattern>(patterns.getContext());
 }
 
 void getONNXToNNAYHLDynamicallyLegal(mlir::ConversionTarget *target) {

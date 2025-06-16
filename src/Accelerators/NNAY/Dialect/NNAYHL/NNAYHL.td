@@ -35,6 +35,14 @@ def SiLU : NNAYHL_Op<"SiLU", [Pure]> {
   let results = (outs AnyType:$output);
 }
 
+def Act : NNAYHL_Op<"Act", [Pure]> {
+  let summary = "act operation";
+  let description = "act operation";
+
+  let arguments = (ins AnyType:$input, Builtin_StringAttr:$activation);
+  let results = (outs AnyType:$output);
+}
+
 def ConvAct : NNAYHL_Op<"ConvAct", [Pure]> {
   let summary = "convolution operation";
   let description = "convolution operation";
@@ -98,6 +106,22 @@ def Mul : NNAYHL_Op<"Mul", [Pure]> {
   let description = "mul operation";
 
   let arguments = (ins AnyType:$input, AnyType:$other);
+  let results = (outs AnyType:$output);
+}
+
+def Sigmoid : NNAYHL_Op<"Sigmoid", [Pure]> {
+  let summary = "sigmoid operation";
+  let description = "sigmoid operation";
+
+  let arguments = (ins AnyType:$input);
+  let results = (outs AnyType:$output);
+}
+
+def Square : NNAYHL_Op<"Square", [Pure]> {
+  let summary = "square operation";
+  let description = "square operation";
+  
+  let arguments = (ins AnyType:$input);
   let results = (outs AnyType:$output);
 }
 

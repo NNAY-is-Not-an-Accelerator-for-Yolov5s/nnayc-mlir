@@ -5,6 +5,8 @@
 #include "src/Accelerators/NNAY/Dialect/NNAYHL/NNAYHLOps.hpp"
 #include "src/Dialect/ONNX/ElementsAttr/DisposableElementsAttr.hpp"
 #include "src/Dialect/ONNX/ONNXOps.hpp"
+#include "llvm/Support/Casting.h"
+#include "llvm/Support/LogicalResult.h"
 
 using namespace mlir;
 using namespace onnx_mlir::nnay;
@@ -14,28 +16,6 @@ namespace {
 // Base class for tensor conversion to MX format
 class ConvertTensorToMXBase {
 protected:
-  // Check if the constant is used as a specific operand in Conv
-  bool isUsedAsConvOperand(ONNXConstantOp op, unsigned operandIdx,
-      StringRef requiredLayout = "") const {
-    Value constantResult = op.getResult();
-
-    for (Operation *user : constantResult.getUsers()) {
-      if (auto convOp = dyn_cast<nnayhl::ConvAct>(user)) {
-        if (convOp.getOperand(operandIdx) == constantResult) {
-          if (requiredLayout.empty())
-            return true;
-
-          if (auto layoutAttr =
-                  convOp->getAttrOfType<StringAttr>("weight_layout")) {
-            if (layoutAttr.getValue() == requiredLayout)
-              return true;
-          }
-        }
-      }
-    }
-    return false;
-  }
-
   // Update Conv operations that use this constant
   void updateConvUsers(PatternRewriter &rewriter, Value oldValue,
       Value newValue, unsigned operandIdx, StringRef newLayout) const {
@@ -58,19 +38,30 @@ struct ConvertWeightToMX : public ConvertTensorToMXBase,
 
   LogicalResult matchAndRewrite(
       ONNXConstantOp op, PatternRewriter &rewriter) const override {
-    // Check if this constant is used as Conv weight with OIHW layout
-    if (!isUsedAsConvOperand(op, 1, "OIHW"))
+    if (op->getUsers().empty())
       return failure();
+
+    for (auto user : op->getUsers()) {
+      if (auto convActOp = dyn_cast<nnayhl::ConvAct>(user)) {
+        if (convActOp.getWeights() == op->getResult(0)) {
+          auto attr = op->getAttr("value");
+          if (!attr)
+            return failure();
+        } else {
+          return failure();
+        }
+      } else {
+        return failure();
+      }
+    }
 
     auto attr = op->getAttr("value");
     if (!attr)
       return failure();
 
-    auto constAttr = dyn_cast<DisposableElementsAttr>(attr);
-    if (!constAttr)
-      return failure();
+    auto constAttr = dyn_cast<DenseElementsAttr>(attr);
 
-    auto shape = constAttr.getShape();
+    auto shape = constAttr.getType().getShape();
     if (shape.size() != 4)
       return failure();
 
@@ -79,21 +70,27 @@ struct ConvertWeightToMX : public ConvertTensorToMXBase,
     auto height = shape[2];
     auto width = shape[3];
 
-    if (inputChannels % 16 != 0)
+    if (outputChannels % 16 != 0) {
+      llvm::errs() << "Output channels must be divisible by 16\n";
       return failure();
+    }
 
     auto values = constAttr.getValues<float>();
 
     // Pack values in OHIbWB format
     SmallVector<float> packedValues;
-    for (int o = 0; o != outputChannels; ++o) {
-      for (int h = 0; h != height; ++h) {
-        for (int ib = 0; ib != inputChannels / 16; ++ib) {
-          for (int w = 0; w != width; ++w) {
-            for (int blockOffset = 0; blockOffset != 16; ++blockOffset) {
-              auto i = ib * 16 + blockOffset;
-              auto index = o * inputChannels * height * width +
-                           i * height * width + h * width + w;
+
+    auto ocGroupNum = outputChannels / 16;
+
+    for (decltype(ocGroupNum) ocGroup = 0; ocGroup != ocGroupNum; ++ocGroup) {
+      for (decltype(height) h = 0; h != height; ++h) {
+        for (decltype(inputChannels) ic = 0; ic != inputChannels; ++ic) {
+          for (decltype(width) w = 0; w != width; ++w) {
+            for (decltype(16) blockOffset = 0; blockOffset != 16;
+                ++blockOffset) {
+              auto oc = ocGroup * 16 + blockOffset;
+              auto index = oc * inputChannels * height * width +
+                           ic * height * width + h * width + w;
               packedValues.push_back(values[index]);
             }
           }
@@ -104,7 +101,7 @@ struct ConvertWeightToMX : public ConvertTensorToMXBase,
     // Create new MX constant with packed layout
     ArrayRef<float> packedValuesRef(packedValues);
     auto newShape = RankedTensorType::get(
-        {outputChannels, height, inputChannels / 16, width, 16},
+        {ocGroupNum, height, inputChannels, width, 16},
         Float32Type::get(op->getContext()));
 
     auto newPackedAttr = DenseElementsAttr::get(newShape, packedValuesRef);
@@ -113,7 +110,7 @@ struct ConvertWeightToMX : public ConvertTensorToMXBase,
 
     // Update users and replace old op
     updateConvUsers(
-        rewriter, op.getResult(), mxConstOp.getResult(), 1, "OHIbWB");
+        rewriter, op.getResult(), mxConstOp.getResult(), 1, "OgHIWG");
     rewriter.replaceOp(op, mxConstOp.getResult());
 
     return success();
@@ -128,9 +125,6 @@ struct ConvertBiasToMX : public ConvertTensorToMXBase,
   LogicalResult matchAndRewrite(
       ONNXConstantOp op, PatternRewriter &rewriter) const override {
     // Check if this constant is used as Conv bias
-    if (!isUsedAsConvOperand(op, 2))
-      return failure();
-
     auto attr = op->getAttr("value");
     if (!attr)
       return failure();
@@ -174,7 +168,7 @@ namespace nnay {
 
 void populateConvertONNXTensorToMXPatterns(RewritePatternSet &patterns) {
   patterns.add<ConvertWeightToMX>(patterns.getContext());
-  patterns.add<ConvertBiasToMX>(patterns.getContext());
+  // patterns.add<ConvertBiasToMX>(patterns.getContext());
 }
 
 } // namespace nnay
