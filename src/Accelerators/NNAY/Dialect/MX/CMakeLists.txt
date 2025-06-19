@@ -4,7 +4,6 @@ add_onnx_mlir_dialect_doc(MX MX.td)
 add_onnx_mlir_library(OMMXDialect
   MXDialect.cpp
   MXOps.cpp
-  MXAttributes.cpp
 
   DEPENDS
   OMMXIncGen

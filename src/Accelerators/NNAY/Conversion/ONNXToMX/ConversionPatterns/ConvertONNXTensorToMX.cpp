@@ -1,39 +1,62 @@
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/PatternMatch.h"
+#include "src/Accelerators/NNAY/Dialect/MX/MXAttributes.hpp"
 #include "src/Accelerators/NNAY/Dialect/MX/MXOps.hpp"
+#include "src/Accelerators/NNAY/Dialect/MX/MXTypes.hpp"
 #include "src/Accelerators/NNAY/Dialect/NNAYHL/NNAYHLOps.hpp"
-#include "src/Dialect/ONNX/ElementsAttr/DisposableElementsAttr.hpp"
 #include "src/Dialect/ONNX/ONNXOps.hpp"
-#include "llvm/Support/Casting.h"
-#include "llvm/Support/LogicalResult.h"
 
 using namespace mlir;
 using namespace onnx_mlir::nnay;
 
 namespace {
 
-// Base class for tensor conversion to MX format
-class ConvertTensorToMXBase {
-protected:
-  // Update Conv operations that use this constant
-  void updateConvUsers(PatternRewriter &rewriter, Value oldValue,
-      Value newValue, unsigned operandIdx, StringRef newLayout) const {
-    for (Operation *user : oldValue.getUsers()) {
-      if (auto convOp = dyn_cast<nnayhl::ConvAct>(user)) {
-        if (convOp.getOperand(operandIdx) == oldValue) {
-          convOp->setOperand(operandIdx, newValue);
-          if (!newLayout.empty())
-            convOp->setAttr("weight_layout", rewriter.getStringAttr(newLayout));
+struct ConvertResultToMX : public mlir::OpRewritePattern<nnayhl::ConvAct> {
+  using mlir::OpRewritePattern<nnayhl::ConvAct>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(
+      nnayhl::ConvAct op, PatternRewriter &rewriter) const override {
+    if (cast<StringAttr>(op->getAttr("input_layout")) != "NCHW") {
+      return failure();
+    }
+
+    auto resultTypes = op->getResultTypes();
+    llvm::SmallVector<Type> newResultTypes;
+    for (auto resultType : resultTypes) {
+      if (isa<RankedTensorType>(resultType)) {
+        auto shape = cast<RankedTensorType>(resultType).getShape();
+        if (shape.size() != 4)
+          return failure();
+        auto n = shape[0];
+        auto c = shape[1];
+        auto h = shape[2];
+        auto w = shape[3];
+        if (c % 16 != 0) {
+          op->emitWarning() << "Output channels must be divisible by 16, "
+                               "result type will not be converted to MX";
+          return failure();
         }
+        auto newShape = RankedTensorType::get(
+            {n, h, c / 16, w}, mx::MXBlockType::getMX9(op->getContext()));
+
+        newResultTypes.push_back(newShape);
+      } else {
+        newResultTypes.push_back(resultType);
       }
     }
+
+    if (!newResultTypes.empty()) {
+      auto newOp = rewriter.replaceOpWithNewOp<nnayhl::ConvAct>(
+          op, newResultTypes, op->getOperands(), op->getAttrs());
+      newOp->setAttr("input_layout", rewriter.getStringAttr("NHCgWG"));
+    }
+
+    return failure();
   }
 };
 
-// Weight tensor conversion
-struct ConvertWeightToMX : public ConvertTensorToMXBase,
-                           public mlir::OpRewritePattern<ONNXConstantOp> {
+struct ConvertWeightToMX : public mlir::OpRewritePattern<ONNXConstantOp> {
   using mlir::OpRewritePattern<ONNXConstantOp>::OpRewritePattern;
 
   LogicalResult matchAndRewrite(
@@ -69,48 +92,55 @@ struct ConvertWeightToMX : public ConvertTensorToMXBase,
     auto inputChannels = shape[1];
     auto height = shape[2];
     auto width = shape[3];
-
-    if (outputChannels % 16 != 0) {
-      llvm::errs() << "Output channels must be divisible by 16\n";
-      return failure();
-    }
-
     auto values = constAttr.getValues<float>();
 
-    // Pack values in OHIbWB format
-    SmallVector<float> packedValues;
+    SmallVector<char> mxData;
 
-    auto ocGroupNum = outputChannels / 16;
+    auto ocGroupNum = (outputChannels + 15) / 16;
+    auto lastGroupSize = outputChannels % 16;
 
     for (decltype(ocGroupNum) ocGroup = 0; ocGroup != ocGroupNum; ++ocGroup) {
       for (decltype(height) h = 0; h != height; ++h) {
         for (decltype(inputChannels) ic = 0; ic != inputChannels; ++ic) {
           for (decltype(width) w = 0; w != width; ++w) {
+            SmallVector<float> blockData;
             for (decltype(16) blockOffset = 0; blockOffset != 16;
                 ++blockOffset) {
-              auto oc = ocGroup * 16 + blockOffset;
-              auto index = oc * inputChannels * height * width +
-                           ic * height * width + h * width + w;
-              packedValues.push_back(values[index]);
+              if (ocGroup == ocGroupNum - 1 && blockOffset >= lastGroupSize) {
+                blockData.push_back(0.0f);
+              } else {
+                auto oc = ocGroup * 16 + blockOffset;
+                auto index = oc * inputChannels * height * width +
+                             ic * height * width + h * width + w;
+                blockData.push_back(values[index]);
+              }
             }
+            auto mxBlockData = mx::getMXBlockData(blockData);
+            mxData.append(mxBlockData.begin(), mxBlockData.end());
           }
         }
       }
     }
 
     // Create new MX constant with packed layout
-    ArrayRef<float> packedValuesRef(packedValues);
-    auto newShape = RankedTensorType::get(
-        {ocGroupNum, height, inputChannels, width, 16},
-        Float32Type::get(op->getContext()));
+    auto newShape =
+        RankedTensorType::get({ocGroupNum, height, inputChannels, width},
+            mx::MXBlockType::getMX9(op.getContext()));
 
-    auto newPackedAttr = DenseElementsAttr::get(newShape, packedValuesRef);
+    auto newPackedAttr = mx::MXBlockElementsAttr::get(newShape, mxData);
+
     auto mxConstOp = rewriter.create<onnx_mlir::nnay::mx::ConstantOp>(
         op->getLoc(), newShape, newPackedAttr);
 
-    // Update users and replace old op
-    updateConvUsers(
-        rewriter, op.getResult(), mxConstOp.getResult(), 1, "OgHIWG");
+    for (auto *user : op.getResult().getUsers()) {
+      if (auto convActOp = dyn_cast<nnayhl::ConvAct>(user)) {
+        if (convActOp.getWeights() == op->getResult(0)) {
+          convActOp.getWeightsMutable().assign(mxConstOp.getResult());
+          convActOp->setAttr("weight_layout", rewriter.getStringAttr("OgHIWG"));
+        }
+      }
+    }
+
     rewriter.replaceOp(op, mxConstOp.getResult());
 
     return success();
@@ -118,48 +148,48 @@ struct ConvertWeightToMX : public ConvertTensorToMXBase,
 };
 
 // Bias tensor conversion
-struct ConvertBiasToMX : public ConvertTensorToMXBase,
-                         public mlir::OpRewritePattern<ONNXConstantOp> {
-  using mlir::OpRewritePattern<ONNXConstantOp>::OpRewritePattern;
+// struct ConvertBiasToMX : public ConvertTensorToMXBase,
+//                          public mlir::OpRewritePattern<ONNXConstantOp> {
+//   using mlir::OpRewritePattern<ONNXConstantOp>::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(
-      ONNXConstantOp op, PatternRewriter &rewriter) const override {
-    // Check if this constant is used as Conv bias
-    auto attr = op->getAttr("value");
-    if (!attr)
-      return failure();
+//   LogicalResult matchAndRewrite(
+//       ONNXConstantOp op, PatternRewriter &rewriter) const override {
+//     // Check if this constant is used as Conv bias
+//     auto attr = op->getAttr("value");
+//     if (!attr)
+//       return failure();
 
-    auto constAttr = dyn_cast<DisposableElementsAttr>(attr);
-    if (!constAttr)
-      return failure();
+//     auto constAttr = dyn_cast<DisposableElementsAttr>(attr);
+//     if (!constAttr)
+//       return failure();
 
-    auto shape = constAttr.getShape();
-    if (shape.size() != 1) // Bias should be 1D
-      return failure();
+//     auto shape = constAttr.getShape();
+//     if (shape.size() != 1) // Bias should be 1D
+//       return failure();
 
-    auto values = constAttr.getValues<float>();
+//     auto values = constAttr.getValues<float>();
 
-    // Convert values to SmallVector
-    SmallVector<float> biasValues;
-    for (auto value : values) {
-      biasValues.push_back(value);
-    }
+//     // Convert values to SmallVector
+//     SmallVector<float> biasValues;
+//     for (auto value : values) {
+//       biasValues.push_back(value);
+//     }
 
-    // Create new MX constant for bias
-    auto newShape =
-        RankedTensorType::get(shape, Float32Type::get(op->getContext()));
-    auto newAttr =
-        DenseElementsAttr::get(newShape, ArrayRef<float>(biasValues));
-    auto mxConstOp = rewriter.create<onnx_mlir::nnay::mx::ConstantOp>(
-        op->getLoc(), newShape, newAttr);
+//     // Create new MX constant for bias
+//     auto newShape =
+//         RankedTensorType::get(shape, Float32Type::get(op->getContext()));
+//     auto newAttr =
+//         DenseElementsAttr::get(newShape, ArrayRef<float>(biasValues));
+//     auto mxConstOp = rewriter.create<onnx_mlir::nnay::mx::ConstantOp>(
+//         op->getLoc(), newShape, newAttr);
 
-    // Update users and replace old op
-    updateConvUsers(rewriter, op.getResult(), mxConstOp.getResult(), 2, "");
-    rewriter.replaceOp(op, mxConstOp.getResult());
+//     // Update users and replace old op
+//     updateConvUsers(rewriter, op.getResult(), mxConstOp.getResult(), 2, "");
+//     rewriter.replaceOp(op, mxConstOp.getResult());
 
-    return success();
-  }
-};
+//     return success();
+//   }
+// };
 
 } // namespace
 
@@ -167,7 +197,7 @@ namespace onnx_mlir {
 namespace nnay {
 
 void populateConvertONNXTensorToMXPatterns(RewritePatternSet &patterns) {
-  patterns.add<ConvertWeightToMX>(patterns.getContext());
+  patterns.add<ConvertWeightToMX, ConvertResultToMX>(patterns.getContext());
   // patterns.add<ConvertBiasToMX>(patterns.getContext());
 }
 

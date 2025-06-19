@@ -1,4 +1,7 @@
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/Bufferization/Pipelines/Passes.h"
+#include "mlir/Dialect/Bufferization/Transforms/FuncBufferizableOpInterfaceImpl.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/AsmState.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/MLIRContext.h"
@@ -93,6 +96,7 @@ int main(int argc, char **argv) {
   registry.insert<::onnx_mlir::nnay::mx::MXDialect>();
 
   bufferization::registerBufferizationPipelines();
+  bufferization::func_ext::registerBufferizableOpInterfaceExternalModels(registry);
 
   nnay::registerPasses();
   registerMLIRContextCLOptions();

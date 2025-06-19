@@ -1,0 +1,25 @@
+namespace NNAYModelData;
+
+enum DataType : byte {
+    UNKNOWN = 0,
+    FLOAT16 = 1,
+    FLOAT32 = 2,
+    MX9 = 3,
+}
+
+table TensorDataBlock {
+    tensor_id:uint32;
+    name:string;
+    data_dst_addr:uint64;
+    data:[byte];
+}
+
+table ModelBundle {
+    magic_number:uint32;
+    format_version:uint32;
+    tensors:[TensorDataBlock];
+}
+
+root_type ModelBundle;
+
+file_extension "hwmdl";
