@@ -1,3 +1,2 @@
 add_subdirectory(ONNXToNNAYHL)
 add_subdirectory(NNAYHLToNNAYLL)
-add_subdirectory(ONNXToMX)

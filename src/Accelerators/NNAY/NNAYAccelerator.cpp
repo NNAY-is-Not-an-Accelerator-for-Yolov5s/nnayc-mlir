@@ -1,6 +1,5 @@
 #include "src/Accelerators/NNAY/NNAYAccelerator.hpp"
 #include "Compiler/NNAYCompilerOptions.hpp"
-#include "Conversion/ONNXToMX/ONNXToMX.hpp"
 #include "Pass/NNAYPasses.hpp"
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Transforms/Passes.h"
@@ -72,11 +71,11 @@ void NNAYAccelerator::addPasses(mlir::OwningOpRef<mlir::ModuleOp> &module,
     addONNXToMLIRPasses(pm, /*target CPU*/ maccel.empty(),
         /*donotScrubDisposableElementsAttr*/ true);
     pm.addPass(onnx_mlir::nnay::createONNXToNNAYHLPass());
-    pm.addPass(onnx_mlir::nnay::mx::createONNXToMXPass());
     pm.addPass(createCanonicalizerPass());
     pm.addPass(onnx_mlir::nnay::createFoldConvActivationPass());
     pm.addPass(onnx_mlir::nnay::createSplitFusePass());
     pm.addPass(onnx_mlir::nnay::createConcatFusePass());
+    // pm.addPass(onnx_mlir::nnay::createOptimizeSigmoidLayoutPass());
     emissionTarget = EmitMLIR;
   }
 }
@@ -90,9 +89,6 @@ void NNAYAccelerator::registerDialects(mlir::DialectRegistry &registry) const {
 
 void NNAYAccelerator::registerPasses(int optLevel) const {
   LLVM_DEBUG(llvm::dbgs() << "Registering passes for NNAY accelerator\n");
-  mlir::registerPass([]() -> std::unique_ptr<mlir::Pass> {
-    return onnx_mlir::nnay::mx::createONNXToMXPass();
-  });
   mlir::registerPass([]() -> std::unique_ptr<mlir::Pass> {
     return onnx_mlir::nnay::createFoldConvActivationPass();
   });

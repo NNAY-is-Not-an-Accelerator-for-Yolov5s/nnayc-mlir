@@ -10,7 +10,8 @@ enum DataType : byte {
 table TensorDataBlock {
     tensor_id:uint32;
     name:string;
-    data_dst_addr:uint64;
+    data_start_addr:uint64;
+    data_end_addr:uint64;
     data:[byte];
 }
 

@@ -13,7 +13,9 @@ std::unique_ptr<mlir::Pass> createFoldConvActivationPass();
 std::unique_ptr<mlir::Pass> createSimulatePass();
 std::unique_ptr<mlir::Pass> createSplitFusePass();
 std::unique_ptr<mlir::Pass> createConcatFusePass();
-std::unique_ptr<mlir::Pass> createExportBinPass();
+std::unique_ptr<mlir::Pass> createOptimizeSigmoidLayoutPass();
+std::unique_ptr<mlir::Pass> createEmitNNAYAsmPass();
+std::unique_ptr<mlir::Pass> createAllocateAddressPass();
 
 } // namespace nnay
 } // namespace onnx_mlir

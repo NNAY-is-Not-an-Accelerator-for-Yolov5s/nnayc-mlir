@@ -1,6 +1,5 @@
 #include "RegisterPasses.hpp"
 #include "Conversion/NNAYHLToNNAYLL/NNAYHLToNNAYLL.hpp"
-#include "Conversion/ONNXToMX/ONNXToMX.hpp"
 #include "mlir/Dialect/Bufferization/Transforms/Passes.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassRegistry.h"
@@ -24,9 +23,6 @@ void registerPasses() {
     return createSimulatePass();
   });
   mlir::registerPass([]() -> std::unique_ptr<mlir::Pass> {
-    return mx::createONNXToMXPass();
-  });
-  mlir::registerPass([]() -> std::unique_ptr<mlir::Pass> {
     return createSplitFusePass();
   });
   mlir::registerPass([]() -> std::unique_ptr<mlir::Pass> {
@@ -36,7 +32,16 @@ void registerPasses() {
     return createGlobalizeMXConstantsPass();
   });
   mlir::registerPass([]() -> std::unique_ptr<mlir::Pass> {
-    return createExportBinPass();
+    return createOptimizeSigmoidLayoutPass();
+  });
+  mlir::registerPass([]() -> std::unique_ptr<mlir::Pass> {
+    return createLowerToNNAYLLPass();
+  });
+  mlir::registerPass([]() -> std::unique_ptr<mlir::Pass> {
+    return createEmitNNAYAsmPass();
+  });
+  mlir::registerPass([]() -> std::unique_ptr<mlir::Pass> {
+    return createAllocateAddressPass();
   });
 
   bufferization::registerBufferizationPasses();

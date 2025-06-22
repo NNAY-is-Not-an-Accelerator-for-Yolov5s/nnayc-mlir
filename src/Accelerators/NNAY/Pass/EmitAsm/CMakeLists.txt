@@ -23,7 +23,7 @@ flatbuffers_generate_headers(
 
 add_onnx_mlir_library(OMNNAYPassesEmitAsm
     EmitAsm.cpp
-    ExportBin.cpp
+    NNAYAsm.cpp
 
     DEPENDS
     ModelFlatbuffersHeaders

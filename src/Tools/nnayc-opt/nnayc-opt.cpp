@@ -22,6 +22,7 @@
 
 #include "src/Accelerators/NNAY/Dialect/MX/MXDialect.hpp"
 #include "src/Accelerators/NNAY/Dialect/NNAYHL/NNAYHLDialect.hpp"
+#include "src/Accelerators/NNAY/Dialect/NNAYLL/NNAYLL.hpp"
 #include "src/Accelerators/NNAY/Pass/NNAYPasses.hpp"
 
 using namespace mlir;
@@ -93,6 +94,7 @@ int main(int argc, char **argv) {
 
   DialectRegistry registry = registerDialects(maccel);
   registry.insert<::onnx_mlir::nnay::nnayhl::NNAYHLDialect>();
+  registry.insert<::onnx_mlir::nnay::nnayll::NNAYLLDialect>();
   registry.insert<::onnx_mlir::nnay::mx::MXDialect>();
 
   bufferization::registerBufferizationPipelines();

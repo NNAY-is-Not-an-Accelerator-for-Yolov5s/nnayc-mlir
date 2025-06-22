@@ -32,6 +32,7 @@ struct GlobalizeMXConstantsPass
   }
 };
 
+std::unique_ptr<mlir::Pass> createLowerToNNAYLLPass();
 std::unique_ptr<mlir::Pass> createGlobalizeMXConstantsPass();
 
 } // namespace onnx_mlir::nnay
